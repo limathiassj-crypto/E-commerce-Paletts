@@ -1,0 +1,31 @@
+{
+  "categories": [
+    { "id": "paletes-pbr", "name": "Paletes PBR", "slug": "paletes-pbr" },
+    { "id": "descartavel", "name": "Descartável", "slug": "descartavel" },
+    { "id": "pre-forma", "name": "Pré-Forma", "slug": "pre-forma" }
+  ],
+  "products": [
+    { "id": "pbr-1-100x120", "name": "Paletes PBR 1", "categoryId": "paletes-pbr", "widthM": 1.0, "lengthM": 1.2 },
+    { "id": "pbr-2-105x125", "name": "Paletes PBR 2", "categoryId": "paletes-pbr", "widthM": 1.05, "lengthM": 1.25 },
+    { "id": "descartavel-100x120", "name": "Descartável", "categoryId": "descartavel", "widthM": 1.0, "lengthM": 1.2 },
+    { "id": "descartavel-147x107", "name": "Descartável", "categoryId": "descartavel", "widthM": 1.47, "lengthM": 1.07 },
+    { "id": "pre-forma-100x120", "name": "Pré-Forma", "categoryId": "pre-forma", "widthM": 1.0, "lengthM": 1.2 },
+    { "id": "pre-forma-105x120", "name": "Pré-Forma", "categoryId": "pre-forma", "widthM": 1.05, "lengthM": 1.2 },
+    { "id": "descartavel-longarina-100x100", "name": "Descartável Longarina", "categoryId": "descartavel", "widthM": 1.0, "lengthM": 1.0 }
+  ],
+  "deliveryRegions": {
+    "serrana": [
+      "Areal", "Bom Jardim", "Cantagalo", "Carmo", "Cachoeiras de Macacu", "Cordeiro", "Duas Barras", "Macuco",
+      "Nova Friburgo", "Petrópolis", "Santa Maria Madalena", "São José do Vale do Rio Preto",
+      "São Sebastião do Alto", "Sumidouro", "Teresópolis", "Trajano de Moraes", "Varre-Sai"
+    ],
+    "baixada_fluminense": [
+      "Belford Roxo", "Duque de Caxias", "Guapimirim", "Itaboraí", "Itaguaí", "Japeri", "Magé", "Mesquita",
+      "Nilópolis", "Nova Iguaçu", "Paracambi", "Queimados", "São João de Meriti", "Seropédica"
+    ],
+    "lagos": [
+      "Araruama", "Armação dos Búzios", "Arraial do Cabo", "Cabo Frio", "Iguaba Grande", "São Pedro da Aldeia",
+      "Saquarema", "Casimiro de Abreu", "Rio das Ostras", "Silva Jardim"
+    ]
+  }
+}

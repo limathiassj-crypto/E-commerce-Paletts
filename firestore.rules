@@ -1,0 +1,183 @@
+rules_version = '2';
+
+// Papéis ficam em Custom Claims (request.auth.token.role = 'seller' | 'admin'),
+// atribuídos apenas pela Cloud Function `setUserRole`. Clientes não conseguem alterá-los.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---------- Funções auxiliares ----------
+    function signedIn() { return request.auth != null; }
+    function isOwner(uid) { return signedIn() && request.auth.uid == uid; }
+    function role() { return signedIn() && 'role' in request.auth.token ? request.auth.token.role : 'customer'; }
+    function isAdmin() { return role() == 'admin'; }
+    function isSeller() { return role() == 'seller'; }
+    function isStaff() { return isAdmin() || isSeller(); }
+    function canEditProducts() {
+      return isAdmin() || (isSeller() && 'canEditProducts' in request.auth.token && request.auth.token.canEditProducts == true);
+    }
+    function onlyChanges(keys) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys);
+    }
+    function str(field, min, max) {
+      return field is string && field.size() >= min && field.size() <= max;
+    }
+
+    // ---------- users ----------
+    match /users/{uid} {
+      allow read: if isOwner(uid) || isStaff();
+      // Criação: o próprio usuário, sem campo de papel/permissão.
+      allow create: if isOwner(uid)
+        && !('role' in request.resource.data)
+        && request.resource.data.keys().hasOnly([
+          'uid','fullName','email','phone','companyName','accountTypes',
+          'acceptedTermsAt','acceptedPrivacyAt','createdAt','updatedAt'])
+        && str(request.resource.data.fullName, 2, 120)
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.accountTypes.hasOnly(['customer','supplier'])
+        && request.resource.data.accountTypes.size() >= 1;
+      allow update: if isOwner(uid)
+        && onlyChanges(['fullName','phone','companyName','accountTypes','updatedAt'])
+        && request.resource.data.accountTypes.hasOnly(['customer','supplier'])
+        && request.resource.data.accountTypes.size() >= 1;
+      allow delete: if false; // exclusão de dados pessoais passa por processo administrativo (LGPD)
+    }
+
+    // ---------- Catálogo ----------
+    match /categories/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /products/{id} {
+      allow read: if resource.data.published == true || isStaff();
+      allow create, update: if canEditProducts()
+        && str(request.resource.data.name, 2, 120)
+        && request.resource.data.updatedBy == request.auth.uid;
+      allow delete: if isAdmin();
+    }
+
+    // ---------- Carrinho (um por usuário) ----------
+    match /carts/{uid} {
+      allow read, write: if isOwner(uid);
+    }
+
+    // ---------- Orçamentos ----------
+    match /quotes/{id} {
+      allow read: if isOwner(resource.data.userId) || isStaff();
+      // Cliente só cria solicitação "submitted". Preços e propostas são exclusivos da equipe.
+      allow create: if signedIn()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.status == 'submitted'
+        && request.resource.data.items is list
+        && request.resource.data.items.size() > 0
+        && request.resource.data.items.size() <= 50
+        && request.resource.data.delivery.municipality is string
+        && request.resource.data.delivery.state == 'RJ'
+        // Nunca confirmado automaticamente; a Function `onQuoteCreated` revalida a cobertura.
+        && request.resource.data.deliveryCoverage in ['covered','not_covered','unchecked']
+        && !('proposedTotal' in request.resource.data);
+      // Cliente só pode cancelar a própria solicitação ainda aberta.
+      allow update: if (isOwner(resource.data.userId)
+          && onlyChanges(['status','updatedAt'])
+          && request.resource.data.status == 'cancelled'
+          && resource.data.status in ['submitted','in_review','info_requested'])
+        || isStaff();
+      allow delete: if isAdmin();
+
+      match /history/{hid} {
+        allow read: if isOwner(get(/databases/$(database)/documents/quotes/$(id)).data.userId) || isStaff();
+        allow create: if isStaff() && request.resource.data.actorId == request.auth.uid;
+        allow update, delete: if false; // histórico imutável
+      }
+
+      // Observações internas: nunca visíveis ao cliente.
+      match /private/{doc} {
+        allow read, write: if isStaff();
+      }
+    }
+
+    // ---------- Pedidos ----------
+    match /orders/{id} {
+      allow read: if isOwner(resource.data.userId) || isStaff();
+      allow create, update: if isStaff();
+      allow delete: if isAdmin();
+    }
+
+    // ---------- Ofertas de resíduos ----------
+    match /residue_offers/{id} {
+      allow read: if isOwner(resource.data.userId) || isStaff();
+      allow create: if signedIn()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.status in ['draft','submitted']
+        && request.resource.data.photos.size() <= 10
+        && str(request.resource.data.contactName, 2, 120)
+        && !('approvedQuantity' in request.resource.data)
+        && !('proposedPrice' in request.resource.data);
+      allow update: if (isOwner(resource.data.userId)
+          && onlyChanges(['status','updatedAt','photos','notes','approximateQuantity','material','condition'])
+          && request.resource.data.status in ['draft','submitted','cancelled']
+          && resource.data.status in ['draft','submitted','info_requested'])
+        || isStaff();
+      allow delete: if isAdmin();
+
+      match /history/{hid} {
+        allow read: if isOwner(get(/databases/$(database)/documents/residue_offers/$(id)).data.userId) || isStaff();
+        allow create: if isStaff() && request.resource.data.actorId == request.auth.uid;
+        allow update, delete: if false;
+      }
+
+      match /private/{doc} {
+        allow read, write: if isStaff();
+      }
+    }
+
+    // ---------- Propostas comerciais ----------
+    match /commercial_proposals/{id} {
+      allow read: if isOwner(resource.data.userId) || isStaff();
+      allow create, update: if isStaff() && request.resource.data.updatedBy == request.auth.uid;
+      allow delete: if isAdmin();
+    }
+
+    // ---------- Cobertura logística ----------
+    match /delivery_regions/{id} {
+      allow read: if true;
+      allow create, update: if isAdmin() && request.resource.data.updatedBy == request.auth.uid;
+      allow delete: if isAdmin();
+    }
+    match /residue_collection_regions/{id} {
+      allow read: if true;
+      allow create, update: if isAdmin() && request.resource.data.updatedBy == request.auth.uid;
+      allow delete: if isAdmin();
+    }
+
+    // ---------- Contato ----------
+    match /contact_messages/{id} {
+      allow create: if str(request.resource.data.name, 2, 120)
+        && str(request.resource.data.message, 5, 4000)
+        && request.resource.data.status == 'new'
+        && (!signedIn() || request.resource.data.userId in [null, request.auth.uid]);
+      allow read, update: if isStaff();
+      allow delete: if isAdmin();
+    }
+
+    // ---------- Notificações ----------
+    match /notifications/{id} {
+      allow read: if isOwner(resource.data.userId);
+      allow update: if isOwner(resource.data.userId) && onlyChanges(['read','readAt']);
+      allow create, delete: if false; // criadas somente por Cloud Functions
+    }
+
+    // ---------- Auditoria ----------
+    match /audit_logs/{id} {
+      allow read: if isAdmin();
+      allow write: if false; // escrita somente por Cloud Functions
+    }
+
+    // ---------- Configurações ----------
+    match /app_settings/{id} {
+      allow read: if id == 'public' || isStaff();
+      allow write: if isAdmin();
+    }
+
+    // Todo o resto é negado por padrão.
+  }
+}

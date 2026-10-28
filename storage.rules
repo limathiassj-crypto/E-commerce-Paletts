@@ -1,0 +1,31 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    function signedIn() { return request.auth != null; }
+    function role() { return signedIn() && 'role' in request.auth.token ? request.auth.token.role : 'customer'; }
+    function isAdmin() { return role() == 'admin'; }
+    function isStaff() { return role() == 'admin' || role() == 'seller'; }
+    function isImage() { return request.resource.contentType.matches('image/(jpeg|png|webp)'); }
+    function under5MB() { return request.resource.size < 5 * 1024 * 1024; }
+
+    // Fotos de produtos: públicas para leitura, escrita somente administradores.
+    match /products/{allPaths=**} {
+      allow read: if true;
+      allow write: if isAdmin() && isImage() && under5MB();
+      allow delete: if isAdmin();
+    }
+
+    // Fotos de ofertas de resíduos: residue_offers/{uid}/{offerId}/{arquivo}
+    match /residue_offers/{uid}/{offerId}/{fileName} {
+      allow read: if (signedIn() && request.auth.uid == uid) || isStaff();
+      allow create: if signedIn() && request.auth.uid == uid && isImage() && under5MB();
+      allow update: if false;
+      allow delete: if (signedIn() && request.auth.uid == uid) || isAdmin();
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
